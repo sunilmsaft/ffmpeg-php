@@ -2,18 +2,25 @@
 
 include_once "ffmpegRecipe.php";
 
-/* 
-	chdir('C:\Users\luke.selden\Documents\Code\git\video');
-	include_once "ffmpegRecipe.php";
-	$x = FFmpegRecipe::fromFile('C:\bin\ffmpeg\presets\libvpx-360p.ffpreset');
-	
-	$x->constrainSize(640, 360);
-	
-	$x = new FFmpegRecipe();
-	$x->setWidth(640)
-	$x->asArgumentsString()
-*/
-
+/**
+ * FFmpegJob
+ * encodes files using ffmpeg as a non-blocking child process
+ *
+ * Usage:
+ *
+ * Create Job:
+ * $job = new FFmpegJob($inputFilePath, $outputFilePath, $recipe);
+ *
+ * Start Job:
+ * $job->start();
+ *
+ * Check if Job is finished (returns boolean):
+ * $job->isActive();
+ *
+ * Get current status (returns associative array of ffmpeg progress:
+ * $statistics = $job->getStatus()
+ *
+ */
 class FFmpegJob {
 
 	const READ_LENGTH = 1024;
@@ -40,7 +47,7 @@ class FFmpegJob {
 	
 	
 
-	function __construct( $inputFile, $outputFile, FFmpegRecipe $recipe ) {
+	function __construct( $inputFile, $outputFile, $recipe ) {
 		
 		// TODO check for security issues with filenames?  file_exists and ffmpeg should handle...
 		
@@ -50,6 +57,9 @@ class FFmpegJob {
 			$this->inputFilePath = $inputFile;
 		}
 		
+		// TODO allow setting of output file to same as input directory, or default directory
+		// TODO allow overriding output extension based on recipe
+		
 		// TODO this only allows for filesystem output, not RTP/HTTP etc...
 		$outputPathInfo = pathinfo($outputFile);
 		if ( !file_exists($outputPathInfo['dirname']) ) {
@@ -58,11 +68,16 @@ class FFmpegJob {
 			$this->outputFilePath = $outputFile;
 		}
 		
-		$this->recipe = $recipe;
+		if ( is_a($recipe, 'FFmpegRecipe') ) {
+			$this->recipe = $recipe;
+		} else {
+			$this->recipe = new FFmpegRecipe($recipe);
+		}
+		
 	}
 	
 	public function start () {
-	
+		
 		$commandString = implode(' ', array(
 			self::$FFMPEG_PATH,
 			'-i', $this->inputFilePath,
@@ -221,8 +236,11 @@ $outputFile = 'myoutputfile.webm';
 // recipe
 $recipe = FFmpegRecipe::fromFile('libvpx-360p.ffpreset');
 
+
+$recipe
+
 // set maximum width/height
-$recipe->constrainSize(640, 360);
+// $recipe->constrainSize(640, 360); now set by preset
 
 // create job
 $job = new FFmpegJob($inputFile, $outputFile, $recipe);
@@ -238,6 +256,18 @@ while ( $job->isActive() ) {
 }
 
 print "done!\n";
+
+// or create thumb, using filename as recipe input
+$job = new FFmpegJob($inputFile, 'thumb.jpg', 'thumb.ffpreset');
+
+// don't display progress, just pause execution until done.
+$startTime = time();
+print "start: $startTime\n";
+$job->start();
+// hold execution of script until complete
+while ( $job->isActive() ) usleep(100);
+$deltaTime = (time() - $startTime) / 1000;
+print "complete in $deltaTime s\n";
 
 */
 

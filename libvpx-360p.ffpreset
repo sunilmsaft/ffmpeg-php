@@ -1,3 +1,5 @@
+# convert to WebM
+
 vcodec=libvpx
 
 g=120
@@ -16,3 +18,10 @@ auto-alt-ref=1
 arnr-maxframes=7
 arnr-strength=5
 arnr-type=centered
+
+
+# this is a special directive that sets the maximum height to 360
+#@height=360
+
+# this directive sets the default extension
+#@extension=webm

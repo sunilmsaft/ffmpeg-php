@@ -2,11 +2,17 @@
 	
 	class FFmpegRecipe {
 	
+	
 		// TODO should this default to true or false?
 		public $allowOverwrite = true;
 	
 		private $arguments;
 		private $filters;
+		
+		public $width;
+		public $height;
+		public $rotation;
+		public $extension;
 	
 		public static function fromFile ( $filepath, FFmpegRecipe $instance = null ) {
 			
@@ -29,18 +35,18 @@
 			
 			while ( !feof($fileHandle) ) {
 				$buffer = fgets($fileHandle, 256);
-				// lines starting with a # are comments
-				if ($buffer[0] == "#") {
-print "skipping comment: $buffer\n";
-					continue;
-				}
 				
-				// TODO is this a possible attack vector?  perhaps necessary to filter for malicious arguments
-				list($key, $value) = explode('=', trim($buffer), 2);
-				if ( $key && $value ) {
-					$recipe->set($key, $value);
-				} else {
-print "no match: $key, $value, $buffer\n";
+				// lines starting with a # are comments or special instructions
+				$matches = array();
+				preg_match('/^(#|#@|)([a-zA-Z]*)=(.+)/', trim($buffer), $matches);
+				
+				if ( !$matches || $matches[1] === '#' ) {
+					// empty or commentempty
+				} elseif ( $matches[1] === '#@' ) {
+					// TODO should we just change match to #@@width instead of #@width to avoid this string add?
+					$recipe->set('@' . $matches[2], $matches[3]);
+				} elseif ( $matches[2] && ($matches[3] != null) ) {
+					$recipe->set($matches[2], $matches[3]);
 				}
 			}
 			
@@ -52,45 +58,62 @@ print "no match: $key, $value, $buffer\n";
 
 		public static function fromJSON ( $json, FFmpegRecipe $instance = null ) {
 			
-			
-			$recipe = ($instance) ? $instance : new FFmpegRecipe();
-			
 			$array = json_decode($json, true);
 			
 			if ( !is_array($array) ) {
 				throw new Exception('Unable to parse JSON');
+			} else {
+				return FFmpegRecipe::fromArray($array, $instance);
 			}
-			
-			// TODO need safety/sanity check
-			foreach($array as $key=>$value) {
-				$recipe->set($key, $value);
-			}
-			
-			return $recipe;
 			
 		}
 		
-		function __construct ( array $inputArguments = null ) {
+		public static function fromArray ( array $arguments, FFmpegRecipe $instance = null ) {
+		
+			$recipe = ($instance) ? $instance : new FFmpegRecipe();
+			
+			foreach ( $arguments as $key=>$value ) {
+				$recipe->set($key, $value);
+			}
+			
+		}
+		
+		function __construct ( $input = null ) {
 			$this->arguments = array();
 			$this->filters = array();
 			
-			if ( $inputArguments ) {
-				// TODO need safety/sanity check
-				foreach ( $array as $key=>$value ) {
-					$recipe->set($key, $value);
-				}	
+			if ( is_array($input) ) {
+				FFmpegRecipe::fromArray($input, $this);
+			} elseif ( is_string($input) && preg_match('/^[\[\{]\"/', $input) ) {
+				FFmpegRecipe::fromJSON($input, $this);
+			} elseif ( is_string($input) ) {
+				FFmpegRecipe::fromFile($input, $this);				
 			}
-			
 			
 		}
 		
 		public function set ( $key, $value ) {
-			if ( $key == 'vf' ) {
-				$this->filters[] = $value;
-			} elseif ( $key == 'y' ) {
-				$this->allowOverwrite = true;
-			} else {
-				$this->arguments[$key] = $value;
+			switch ( $key ) {
+				case 'vf':
+					$this->filters[] = $value;
+					break;
+				case 'y':
+					$this->allowOverwrite = true;
+					break;
+				case '@width':
+					$this->width = $value;
+					break;
+				case '@height':
+					$this->height = $value;
+					break;
+				case '@rotate':
+					$this->rotation = $value;
+					break;
+				case '@extension':
+					$this->extension = $value;
+				default:
+					$this->arguments[$key] = $value;
+					break;
 			}
 		}
 		
@@ -98,6 +121,14 @@ print "no match: $key, $value, $buffer\n";
 			$args = "";
 			foreach ( $this->arguments as $key => $value ) {
 				$args .= " -$key $value";
+			}
+			
+			if ( $this->rotation ) {
+				$this->rotate($this->rotation);
+			}
+			
+			if ( $this->width || $this->height ) {
+				$this->constrainSize( $this->width, $this->height );
 			}
 			
 			foreach ( $this->filters as $value ) {
@@ -115,11 +146,11 @@ print "no match: $key, $value, $buffer\n";
 		public function constrainSize( $maxWidth = null, $maxHeight = null) {
 			
 			if ( $maxWidth && (($maxWidth > 4096) || ($maxWidth < 16)) ) {
-				throw new Exception('Invalid width');
+				throw new Exception("Invalid width: $maxWidth");
 			}
 			
 			if ( $maxHeight && (($maxHeight > 4096) || ($maxHeight < 16)) ) {
-					throw new Exception('Invalid height');
+					throw new Exception("Invalid height: $maxHeight");
 			}
 			
 			if ( $maxWidth && $maxHeight ) {

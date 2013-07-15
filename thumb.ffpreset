@@ -1,0 +1,7 @@
+
+#limit width and height to 640x480, default extension is jpg
+#@width=640
+#@height=480
+#@extension=jpg
+
+vframes=1
