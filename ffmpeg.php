@@ -1,15 +1,15 @@
 <?php
 
-include_once "ffmpegRecipe.php";
+include_once "FFpreset.php";
 
 /**
- * FFmpegJob
+ * FFmpeg
  * encodes files using ffmpeg as a non-blocking child process
  *
  * Usage:
  *
  * Create Job:
- * $job = new FFmpegJob($inputFilePath, $outputFilePath, $recipe);
+ * $job = new FFmpeg($inputFilePath, $outputFilePath, $recipe);
  *
  * Start Job:
  * $job->start();
@@ -21,7 +21,7 @@ include_once "ffmpegRecipe.php";
  * $statistics = $job->getStatus()
  *
  */
-class FFmpegJob {
+class FFmpeg {
 
 	const READ_LENGTH = 1024;
 	const STDIN = 0;
@@ -68,10 +68,10 @@ class FFmpegJob {
 			$this->outputFilePath = $outputFile;
 		}
 		
-		if ( is_a($recipe, 'FFmpegRecipe') ) {
+		if ( is_a($recipe, 'FFpreset') ) {
 			$this->recipe = $recipe;
 		} else {
-			$this->recipe = new FFmpegRecipe($recipe);
+			$this->recipe = new FFpreset($recipe);
 		}
 		
 	}
@@ -234,7 +234,7 @@ $inputFile = 'myinputfile.webm';
 $outputFile = 'myoutputfile.webm';
 
 // recipe
-$recipe = FFmpegRecipe::fromFile('libvpx-360p.ffpreset');
+$recipe = FFpreset::fromFile('libvpx-360p.ffpreset');
 
 
 $recipe
@@ -243,7 +243,7 @@ $recipe
 // $recipe->constrainSize(640, 360); now set by preset
 
 // create job
-$job = new FFmpegJob($inputFile, $outputFile, $recipe);
+$job = new FFmpeg($inputFile, $outputFile, $recipe);
 
 $job->start();
 
@@ -258,7 +258,7 @@ while ( $job->isActive() ) {
 print "done!\n";
 
 // or create thumb, using filename as recipe input
-$job = new FFmpegJob($inputFile, 'thumb.jpg', 'thumb.ffpreset');
+$job = new FFmpeg($inputFile, 'thumb.jpg', 'thumb.ffpreset');
 
 // don't display progress, just pause execution until done.
 $startTime = time();

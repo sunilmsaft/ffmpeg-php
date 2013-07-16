@@ -7,13 +7,13 @@ EXAMPLE USAGE
 		$outputFile = 'myoutputfile.webm';
 
 		// recipe
-		$recipe = FFmpegRecipe::fromFile('libvpx-360p.ffpreset');
+		$recipe = FFpreset::fromFile('libvpx-360p.ffpreset');
 
 		// set maximum width/height
 		$recipe->constrainSize(640, 360);
 
 		// create job
-		$job = new FFmpegJob($inputFile, $outputFile, $recipe);
+		$job = new FFmpeg($inputFile, $outputFile, $recipe);
 
 		$job->start();
 

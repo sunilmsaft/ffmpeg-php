@@ -1,9 +1,10 @@
 <?php
 
-	class FFmpegFile {
+	class FFprobe {
 	
 		public static $FFPROBE_PATH = 'ffprobe';
 	
+		public $filename;
 		public $container;
 		public $video;
 		public $audio;
@@ -13,19 +14,46 @@
 			
 			if ( $filename ) {
 				$this->filename = (string) $filename;
-				$this->probe($this->filename);
+				
+				$this->json = $this->probe($this->filename);
+				$this->parse($this->json);
 			}
 			
 		}
 		
-		function probe ($filename) {
+		// singleton access method FFprobe()
+		static function open ( $filename ) {
+			if ( !is_readable($filename) ) {
+				throw new Exception('Unable to open media file');
+			}
+			
+			return new FFprobe( $filename );
+		}
 		
-			$json = shell_exec(self::$FFPROBE_PATH . " -i {$filename} -of json=c=1 -loglevel quiet -show_format -show_streams -show_error");
+		function probe ( $filename ) {
+			
+			// TODO maybe not secure
+			$escapedFilename = escapeshellarg( trim($filename, '"') );
+			
+			$json = shell_exec(self::$FFPROBE_PATH . " -i $escapedFilename -of json=c=1 -loglevel quiet -show_format -show_streams -show_error");
+			
 			$data = json_decode($json, true);
+			
+			if ( !is_array($data) ) {
+				throw new Exception('Unable to parse JSON');
+			}
 			
 			if ( $data['error'] ) {
 				throw new Exception( $data['error']['string'] );
 			}
+			
+			return $data;
+			
+		}
+		
+		function parse ( $data ) {
+			
+			/** populate with info **/
 			
 			if ( $data['format'] ) {
 				$this->container = array(
@@ -81,9 +109,17 @@
 				}
 			}
 			
-			return $this;
+			return $this;	
+		}
+		
+		function save ( $filename ) {
+			if ( !is_writable($filename) ) {
+				throw new Exception('FFpreset: Output file is not writable');
+			}
 			
+			file_put_contents( (string) $filename, json_encode($this->json) );
 		}
 	}
+	
 	
 ?>

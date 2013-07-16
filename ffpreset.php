@@ -1,6 +1,6 @@
 <?php
 	
-	class FFmpegRecipe {
+	class FFpreset {
 	
 	
 		// TODO should this default to true or false?
@@ -14,9 +14,9 @@
 		public $rotation;
 		public $extension;
 	
-		public static function fromFile ( $filepath, FFmpegRecipe $instance = null ) {
+		public static function fromFile ( $filepath, FFpreset $instance = null ) {
 			
-			$recipe = ($instance) ? $instance : new FFmpegRecipe();
+			$preset = $instance ?: new FFpreset();
 			
 			if ( !is_string($filepath) || !file_exists($filepath) ) {
 				throw new Exception('ffpreset file does not exist');
@@ -24,7 +24,7 @@
 			
 			$pathinfo = pathinfo($filepath);
 			if ( $pathinfo['extension'] != 'ffpreset' ) {
-				throw new Exception('Recipe preset must have ffpreset extension');
+				throw new Exception('Preset must have .ffpreset extension');
 			}
 			
 			$fileHandle = fopen($filepath, 'r');
@@ -44,37 +44,43 @@
 					// empty or commentempty
 				} elseif ( $matches[1] === '#@' ) {
 					// TODO should we just change match to #@@width instead of #@width to avoid this string add?
-					$recipe->set('@' . $matches[2], $matches[3]);
+					$preset->set('@' . $matches[2], $matches[3]);
 				} elseif ( $matches[2] && ($matches[3] != null) ) {
-					$recipe->set($matches[2], $matches[3]);
+					$preset->set($matches[2], $matches[3]);
 				}
 			}
 			
 			fclose($fileHandle);
 			
-			return $recipe;
+			return $preset;
 			
 		}
+		
+		public static function load ( $filename ) {
+			return FFpreset::fromFile( $filename );
+		}
 
-		public static function fromJSON ( $json, FFmpegRecipe $instance = null ) {
+		public static function fromJSON ( $json, FFpreset $instance = null ) {
 			
 			$array = json_decode($json, true);
 			
 			if ( !is_array($array) ) {
 				throw new Exception('Unable to parse JSON');
-			} else {
-				return FFmpegRecipe::fromArray($array, $instance);
 			}
+			
+			return FFpreset::fromArray($array, $instance);
 			
 		}
 		
-		public static function fromArray ( array $arguments, FFmpegRecipe $instance = null ) {
+		public static function fromArray ( array $arguments, FFpreset $instance = null ) {
 		
-			$recipe = ($instance) ? $instance : new FFmpegRecipe();
+			$preset = $instance ?: new FFpreset();
 			
 			foreach ( $arguments as $key=>$value ) {
-				$recipe->set($key, $value);
+				$preset->set($key, $value);
 			}
+			
+			return $preset;
 			
 		}
 		
@@ -83,11 +89,11 @@
 			$this->filters = array();
 			
 			if ( is_array($input) ) {
-				FFmpegRecipe::fromArray($input, $this);
+				FFpreset::fromArray($input, $this);
 			} elseif ( is_string($input) && preg_match('/^[\[\{]\"/', $input) ) {
-				FFmpegRecipe::fromJSON($input, $this);
+				FFpreset::fromJSON($input, $this);
 			} elseif ( is_string($input) ) {
-				FFmpegRecipe::fromFile($input, $this);				
+				FFpreset::fromFile($input, $this);				
 			}
 			
 		}
