@@ -1,19 +1,15 @@
 <?php
+
+	include_once 'fffile.php';
 	
-	class FFpreset {
+	class FFpreset extends FFfile {
 	
 	
 		// TODO should this default to true or false?
 		public $allowOverwrite = true;
 	
-		private $arguments;
-		private $filters;
+		public $filters;
 		
-		public $width;
-		public $height;
-		public $rotation;
-		public $extension;
-	
 		public static function fromFile ( $filepath, FFpreset $instance = null ) {
 			
 			$preset = $instance ?: new FFpreset();
@@ -43,8 +39,7 @@
 				if ( !$matches || $matches[1] === '#' ) {
 					// empty or commentempty
 				} elseif ( $matches[1] === '#@' ) {
-					// TODO should we just change match to #@@width instead of #@width to avoid this string add?
-					$preset->set('@' . $matches[2], $matches[3]);
+					$preset->set($matches[2], $matches[3]);
 				} elseif ( $matches[2] && ($matches[3] != null) ) {
 					$preset->set($matches[2], $matches[3]);
 				}
@@ -100,23 +95,41 @@
 		
 		public function set ( $key, $value ) {
 			switch ( $key ) {
-				case 'vf':
-					$this->filters[] = $value;
+				case 'vf'       : $this->filters[] = $value;          break;
+				case 'y'        : $this->allowOverwrite = true;       break;
+				case 'extension': $this->extension           = $value; break;
+				
+				// TODO convert 00:00:00 duration to seconds?
+				case 't'        :
+				case 'duration' : $this->duration            = $value; break;
+				
+				case 'f'        :
+				case 'format'   : $this->format              = $value; break;
+				
+				case 'vcodec'   :                                     
+				case 'c:v'      : $this->video['codec']      = $value; break;
+				
+				// TODO convert pretty (1024k, 10M) to bytes
+				case 'b'        :                                     
+				case 'b:v'      : $this->video['bitrate']    = $value; break;
+				case 'r'        : $this->video['framerate']  = $value; break;
+				case 's'        :
+					list($this->width, $this->height) = explode('x', $value);
 					break;
-				case 'y':
-					$this->allowOverwrite = true;
-					break;
-				case '@width':
-					$this->width = $value;
-					break;
-				case '@height':
-					$this->height = $value;
-					break;
-				case '@rotate':
-					$this->rotation = $value;
-					break;
-				case '@extension':
-					$this->extension = $value;
+				case 'width'    : $this->width               = $value; break;
+				case 'height'   : $this->height              = $value; break;
+				case 'rotate'   : $this->rotation            = $value; break;
+				
+				case 'acodec'   :                                   
+				case 'c:a'      : $this->audio['codec']      = $value; break;
+				// TODO convert pretty (1024k, 10M) to bytes
+				case 'ab'       :                                     
+				case 'b:a'      : $this->audio['bitrate']    = $value; break;
+				case 'ac'       : $this->audio['channels']   = $value; break;
+				case 'ar'       : $this->audio['samplerate'] = $value; break;
+				
+				case 'c:s'      : $this->text['codec']       = $value; break;
+				
 				default:
 					$this->arguments[$key] = $value;
 					break;
@@ -139,6 +152,14 @@
 			
 			foreach ( $this->filters as $value ) {
 				$args .= " -vf $value";
+			}
+			
+			if ( $this->format ) {
+				$args .= " -f {$this->format}";
+			}
+			
+			if ( $this->duration ) {
+				$args .= " -t {$this->duration}";
 			}
 			
 			if ($this->allowOverwrite) {
@@ -203,9 +224,8 @@
 			$this->arguments['ss'] = (int) $offset;
 			
 			if( (float) $duration > 0 ) {
-				$this->arguments['t'] = (float) $duration;
+				$this->duration = (float) $duration;
 			}
 		
 		}
 	}
-?>

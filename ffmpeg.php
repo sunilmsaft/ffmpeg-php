@@ -1,6 +1,9 @@
 <?php
 
+include_once "FFfile.php";
 include_once "FFpreset.php";
+include_once "FFprobe.php";
+
 
 /**
  * FFmpeg

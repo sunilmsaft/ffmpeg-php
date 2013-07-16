@@ -1,6 +1,8 @@
 <?php
 
-	class FFprobe {
+	include_once 'fffile.php';
+
+	class FFprobe extends FFfile {
 	
 		public static $FFPROBE_PATH = 'ffprobe';
 	
@@ -56,17 +58,15 @@
 			/** populate with info **/
 			
 			if ( $data['format'] ) {
-				$this->container = array(
-					'format'   => $data['format']['format_name'],
-					'duration' => $data['format']['duration'],
-					'size'     => $data['format']['size']
-				);
+				$this->format   = $data['format']['format_name'];
+				$this->duration = $data['format']['duration'];
+				$this->filesize = $data['format']['size'];
 			}
 			
 			if ( $data['streams'] ) {
 				foreach ( $data['streams'] as $stream ) {
 					
-					// only grab first stream of each type
+					// only grab first stream of each type (hence continue statement)
 					switch ( $stream['codec_type'] ) {
 						case 'video':
 						
@@ -77,9 +77,7 @@
 								'bitrate'   => $stream['bit_rate'],
 								'width'     => $stream['width'],
 								'height'    => $stream['height'],
-								'framerate' => $stream['r_frame_rate'],
-								'sar'       => $stream['sample_aspect_ratio'],
-								'dar'       => $stream['display_aspect_ratio']
+								'framerate' => $stream['r_frame_rate']
 							);
 							
 							break;
@@ -100,8 +98,7 @@
 							if ( $this->text ) continue;
 							
 							$this->text = array(
-								'codec'      => $stream['codec_name'],
-								'bitrate'    => $stream['bit_rate']
+								'codec'      => $stream['codec_name']
 							);
 							
 							break;
@@ -109,17 +106,14 @@
 				}
 			}
 			
-			return $this;	
+			return $this;
 		}
 		
-		function save ( $filename ) {
-			if ( !is_writable($filename) ) {
-				throw new Exception('FFpreset: Output file is not writable');
-			}
-			
-			file_put_contents( (string) $filename, json_encode($this->json) );
-		}
+		
 	}
 	
 	
-?>
+	//
+	$x = new FFprobe('C:\Users\luke.selden\Videos\Encoded\blank.mp4');
+	print var_export($x);
+	
