@@ -26,21 +26,24 @@ include_once "FFprobe.php";
  */
 class FFmpeg {
 
-	const READ_LENGTH = 1024;
+	const READ_LENGTH = 256;
 	const STDIN = 0;
 	const STDOUT = 1;
 	const STDERR = 2;
 	// change if necessary
 	public static $FFMPEG_PATH = 'ffmpeg';
 
-	public $inputFile;
-	
-	public $inputFilePath;
-	public $outputFilePath;
+	public $input;
+	public $output;
 	public $recipe;
-	public $duration;
 	
 	public $progress;
+	public $duration;
+	
+	// set true to use the same directory as input file by default
+	public static $SAME_DIRECTORY = true;
+	// set true to use the same filename as input file by default
+	public static $SAME_FILENAME = true;
 	
 	private $pid;
 	private $exitcode;
@@ -50,45 +53,86 @@ class FFmpeg {
 	
 	
 
-	function __construct( $inputFile, $outputFile, $recipe ) {
+	function __construct ( $input, $output ) {
 		
-		// TODO check for security issues with filenames?  file_exists and ffmpeg should handle...
+		$this->setInput($input);
+		$this->setOutput($output);
 		
-		if ( !file_exists($inputFile) ) {
-			throw new Exception("Input file does not exist");
-		} else {
-			$this->inputFilePath = $inputFile;
+	}
+	
+	// by default use ffprobe to get information about file
+	public function setInput ( $input, $inspect = false ) {
+		$this->input = ( $input instanceof FFAbstractFile ) ? $input : new FFSource($input);
+		
+		if ( $inspect ) {
+			$this->input->inspect();
+			// get duration information from file
+			$this->duration = $this->input->duration;
 		}
 		
-		// TODO allow setting of output file to same as input directory, or default directory
-		// TODO allow overriding output extension based on recipe
+	}
 		
-		// TODO this only allows for filesystem output, not RTP/HTTP etc...
-		$outputPathInfo = pathinfo($outputFile);
-		if ( !file_exists($outputPathInfo['dirname']) ) {
-			throw new Exception("Output directory does not exist");
-		} else {
-			$this->outputFilePath = $outputFile;
+	public function setOutput ( $output ) {
+		$this->output = ($output instanceof FFDestination ) ? $output : new FFDestination($output);
+	}
+	
+	/**
+	 * Select a portion of a file from a given offset
+	 * Parameters follow array_slice syntax:
+	 * @param {float} offset - Offset (in seconds) to start
+	 * @param {float} duration - Duration (in seconds) of output file.
+	 * 				  If null, 0 or negative then encode to end of input
+	 */
+	public function slice ( $offset, $duration=null ) {
+		$this->output->set('ss', (float) $offset);
+		
+		if( (float) $duration > 0 ) {
+			$this->output->set('duration', $duration);
+		} else if ( (float) $duration < 0 ) {
+			if ( !$this->duration ) {
+				throw new Exception("Unable to slice file from end because duratio is unknown -- use the input file's 'inspect' option to read the video duration first");
+			}
+			
+			$this->output->set('duration', $this->duration - ((float) $duration) - ((float) $offset));
+		}
+	
+	}
+	
+	
+	// TODO what's the most expected behavior for defaults / overwriting destination?
+	private function validateOutputSettings ( ) {
+		// TODO test - not sure that an empty directory will return false (may be '.')
+		$newOutputPathinfo = array();
+		if ( !$this->output->directory && $SAME_DIRECTORY ) {
+			$newOutputPathinfo['directory'] = $this->input->directory;
 		}
 		
-		if ( is_a($recipe, 'FFpreset') ) {
-			$this->recipe = $recipe;
-		} else {
-			$this->recipe = new FFpreset($recipe);
+		if ( !$this->output->filename && $SAME_FILENAME ) {
+			$newOutputPathinfo['filename'] = $this->input->filename;
+		}
+		
+		if ( !empty($newOutputPathinfo) ) {
+			$this->output->setFilepath($newOutputPathinfo);
+		}
+		
+		if ( $this->output->filepath == $this->input->filepath ) {
+			throw new Exception("Input/Output filename collision - change output path");
 		}
 		
 	}
 	
 	public function start () {
 		
+		$this->validateOutputSettings();
+		
+		// todo ensure that preset input and output is set
+		// TODO add checks of input to preset?
 		$commandString = implode(' ', array(
 			self::$FFMPEG_PATH,
-			'-i', $this->inputFilePath,
-			'-nostdin', // no need to interact with process
-			$this->recipe->asArgumentsString(),
-			$this->outputFilePath
+			'-i', $this->input->filepath,
+			$this->output->asArgumentsString(),
+			$this->output->filepath
 		));
-	
 	
 		$this->pipes = (array) null;
 		$descriptor = array (
@@ -108,9 +152,9 @@ class FFmpeg {
 		);
 		
 		//Set STDOUT and STDERR to non-blocking 
-		stream_set_blocking ($this->pipes[self::STDOUT], 0);
-		stream_set_blocking ($this->pipes[self::STDERR], 0);
-		
+		stream_set_blocking($this->pipes[self::STDOUT], 0);
+		stream_set_blocking($this->pipes[self::STDERR], 0);
+			
 		$processInfo = proc_get_status($this->process);
 		$this->pid = $processInfo['pid'];
 		
@@ -158,8 +202,18 @@ class FFmpeg {
 	public function getStatus() {
 		$data = array();
 		
-		$lastLine = array_pop($this->fillBuffer(self::STDERR));
-
+		$buffer = $this->fillBuffer(self::STDERR);
+		
+		// TODO this maybe should just use probe on input -- might be expensive if never found
+		if ( !$this->duration ) {
+			if ( preg_match("/Duration: ([\d:\.]*)/", implode('', $buffer), $m) ) {
+				list($h, $m, $s) = explode(':',$m[1]); // get time info
+				$this->duration = (int) ($h*360 + $m*60 + $s);
+			}
+		};
+		
+		$lastLine = array_pop($buffer);
+			
 		if ( !$this->isActive() ) {
 			
 			// if exitcode > 0 means there's an error, otherwise set complete			
@@ -187,9 +241,14 @@ class FFmpeg {
 		if( empty($data) ) {
 			$data['message'] = $lastLine;
 		} else {
-			if ($this->duration ) $data['percent'] = (int) (100*$data['time'] / max($this->duration, 0.01));
+			if ($this->duration ) {
+				$this->progress = $data['time'] / max($this->duration, 0.01);
+				$data['percent'] = (int) ($this->progress * 100);
+			} else {
+				$data['percent'] = '??';
+			}
 			
-			$data['message'] = "{$data['percent']}% {$data['frame']}, fps: {$data['fps']}, bitrate: {$data['bitrate']}, time: {$data['time']} of {$this->duration}";
+			$data['message'] = "{$data['percent']}%, frame: {$data['frame']}, fps: {$data['fps']}, bitrate: {$data['bitrate']}kbps, time: {$data['time']}s of {$this->duration}s";
 		}
 		
 		return $data;
@@ -206,6 +265,7 @@ class FFmpeg {
 			return false;
 		}
 		
+		// TODO allow setting timeout value (1 second) as config option?
 		$ready= stream_select($pipes, $write = null, $ex = null, 1, 0);
 		
 		if ($ready === false) {
@@ -215,12 +275,18 @@ class FFmpeg {
 			return $buffer; // will be empty
 		}
 		
-		$buffer[] = fgets($pipes[0], self::READ_LENGTH);
-		$status = stream_get_meta_data($pipes[0]);
+		
+		// TODO supposedly you shouldn't use unread bytes, but this is what works on Windows
+		// can't get stream metadata until read at least once
+		$status = array('unread_bytes' => 1);
+		$read = true;
 		while ( $status['unread_bytes'] > 0 ) {
-			$read = fgets($pipes[0], self::READ_LENGTH);
-			$buffer[] = trim($read);
-//print "adding to buffer: " . trim($read) . "\n";
+			//$read = fgets($pipes[0], self::READ_LENGTH);
+			$read = fread($pipes[0], self::READ_LENGTH);
+			if ($read !== false) {
+				$buffer[] = trim($read);
+			}
+			
 			$status = stream_get_meta_data($pipes[0]);
 		}
 		
@@ -228,50 +294,5 @@ class FFmpeg {
 	}
 	
 }
-
-/*
-EXAMPLE USAGE
-
-// path to input file
-$inputFile = 'myinputfile.webm';
-$outputFile = 'myoutputfile.webm';
-
-// recipe
-$recipe = FFpreset::fromFile('libvpx-360p.ffpreset');
-
-
-$recipe
-
-// set maximum width/height
-// $recipe->constrainSize(640, 360); now set by preset
-
-// create job
-$job = new FFmpeg($inputFile, $outputFile, $recipe);
-
-$job->start();
-
-print "\n\nSTART\n\n";
-
-while ( $job->isActive() ) {
-	$data = $job->getStatus();
-	print var_export($data) . "\n";
-	sleep(1);
-}
-
-print "done!\n";
-
-// or create thumb, using filename as recipe input
-$job = new FFmpeg($inputFile, 'thumb.jpg', 'thumb.ffpreset');
-
-// don't display progress, just pause execution until done.
-$startTime = time();
-print "start: $startTime\n";
-$job->start();
-// hold execution of script until complete
-while ( $job->isActive() ) usleep(100);
-$deltaTime = (time() - $startTime) / 1000;
-print "complete in $deltaTime s\n";
-
-*/
 
 ?>

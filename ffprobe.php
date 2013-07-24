@@ -2,69 +2,51 @@
 
 	include_once 'fffile.php';
 
-	class FFprobe extends FFfile {
+	// wrapper around FFProbe to determine information about a file.
+	
+	class FFSource extends FFAbstractFile {
 	
 		public static $FFPROBE_PATH = 'ffprobe';
-	
-		public $filename;
-		public $container;
-		public $video;
-		public $audio;
-		public $text;
 		
-		function __construct ( $filename ) {
+		function __construct ( $filepath = null ) {
+			parent::__construct($filepath);	
+		}
+		
+		public function inspect ( $filepath ) {
 			
-			if ( $filename ) {
-				$this->filename = (string) $filename;
-				
-				$this->json = $this->probe($this->filename);
-				$this->parse($this->json);
+			// TODO maybe not secure?
+			$escapedFilepath = escapeshellarg( trim($this->filepath, '"') );
+			
+			$json = shell_exec(self::$FFPROBE_PATH . " -i $escapedFilepath -of json=c=1 -loglevel quiet -show_format -show_streams -show_error");
+			
+			$info = json_decode($json, true);
+			
+			if ( !is_array($info) ) {
+				throw new Exception('Error reading input');
 			}
+			
+			if ( $info['error'] ) {
+				throw new Exception( $info['error']['string'] );
+			}
+			
+			$this->populate($info);
+			
+			return $info;
 			
 		}
 		
-		// singleton access method FFprobe()
-		static function open ( $filename ) {
-			if ( !is_readable($filename) ) {
-				throw new Exception('Unable to open media file');
-			}
-			
-			return new FFprobe( $filename );
-		}
-		
-		function probe ( $filename ) {
-			
-			// TODO maybe not secure
-			$escapedFilename = escapeshellarg( trim($filename, '"') );
-			
-			$json = shell_exec(self::$FFPROBE_PATH . " -i $escapedFilename -of json=c=1 -loglevel quiet -show_format -show_streams -show_error");
-			
-			$data = json_decode($json, true);
-			
-			if ( !is_array($data) ) {
-				throw new Exception('Unable to parse JSON');
-			}
-			
-			if ( $data['error'] ) {
-				throw new Exception( $data['error']['string'] );
-			}
-			
-			return $data;
-			
-		}
-		
-		function parse ( $data ) {
+		protected function populate ( $info ) {
 			
 			/** populate with info **/
 			
-			if ( $data['format'] ) {
-				$this->format   = $data['format']['format_name'];
-				$this->duration = $data['format']['duration'];
-				$this->filesize = $data['format']['size'];
+			if ( $info['format'] ) {
+				$this->format   = $info['format']['format_name'];
+				$this->duration = $info['format']['duration'];
+				$this->filesize = $info['format']['size'];
 			}
-			
-			if ( $data['streams'] ) {
-				foreach ( $data['streams'] as $stream ) {
+				
+			if ( $info['streams'] ) {
+				foreach ( $info['streams'] as $stream ) {
 					
 					// only grab first stream of each type (hence continue statement)
 					switch ( $stream['codec_type'] ) {
@@ -105,15 +87,7 @@
 					}
 				}
 			}
-			
-			return $this;
 		}
 		
 		
 	}
-	
-	
-	//
-	$x = new FFprobe('C:\Users\luke.selden\Videos\Encoded\blank.mp4');
-	print var_export($x);
-	

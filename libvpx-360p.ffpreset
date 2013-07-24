@@ -25,3 +25,6 @@ arnr-type=centered
 
 # this directive sets the default extension
 #@extension=webm
+
+# this directive allows you to set the default output directory
+## @directory=/path/to/output

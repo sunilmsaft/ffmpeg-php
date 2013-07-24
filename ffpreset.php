@@ -2,17 +2,25 @@
 
 	include_once 'fffile.php';
 	
-	class FFpreset extends FFfile {
-	
+	class FFDestination extends FFAbstractFile {
+		
+		// TODO include default options?
 	
 		// TODO should this default to true or false?
 		public $allowOverwrite = true;
 	
-		public $filters;
-		
-		public static function fromFile ( $filepath, FFpreset $instance = null ) {
+		function __construct ( $input = null ) {
+			parent::__construct();
 			
-			$preset = $instance ?: new FFpreset();
+			if ( is_array($input) ) {
+				$this->setArray($input, $this);
+			} elseif ( is_string($input) ) {
+				$this->loadPreset($input, $this);				
+			}
+			
+		}
+		
+		public function loadPreset ( $filepath ) {
 			
 			if ( !is_string($filepath) || !file_exists($filepath) ) {
 				throw new Exception('ffpreset file does not exist');
@@ -36,111 +44,84 @@
 				$matches = array();
 				preg_match('/^(#|#@|)([a-zA-Z]*)=(.+)/', trim($buffer), $matches);
 				
+				// empty or comment
 				if ( !$matches || $matches[1] === '#' ) {
-					// empty or commentempty
-				} elseif ( $matches[1] === '#@' ) {
-					$preset->set($matches[2], $matches[3]);
-				} elseif ( $matches[2] && ($matches[3] != null) ) {
-					$preset->set($matches[2], $matches[3]);
+					// nothing
+				// else special directive or values to set
+				} elseif ( $matches[1] === '#@' || $matches[2] && ($matches[3] !== null) ) {
+					$this->set($matches[2], $matches[3]);
 				}
 			}
 			
 			fclose($fileHandle);
 			
-			return $preset;
-			
 		}
 		
-		public static function load ( $filename ) {
-			return FFpreset::fromFile( $filename );
-		}
-
-		public static function fromJSON ( $json, FFpreset $instance = null ) {
-			
-			$array = json_decode($json, true);
-			
-			if ( !is_array($array) ) {
-				throw new Exception('Unable to parse JSON');
-			}
-			
-			return FFpreset::fromArray($array, $instance);
-			
-		}
 		
-		public static function fromArray ( array $arguments, FFpreset $instance = null ) {
+		public function setArray ( array $arguments ) {
 		
-			$preset = $instance ?: new FFpreset();
-			
 			foreach ( $arguments as $key=>$value ) {
-				$preset->set($key, $value);
-			}
-			
-			return $preset;
-			
-		}
-		
-		function __construct ( $input = null ) {
-			$this->arguments = array();
-			$this->filters = array();
-			
-			if ( is_array($input) ) {
-				FFpreset::fromArray($input, $this);
-			} elseif ( is_string($input) && preg_match('/^[\[\{]\"/', $input) ) {
-				FFpreset::fromJSON($input, $this);
-			} elseif ( is_string($input) ) {
-				FFpreset::fromFile($input, $this);				
+				$this->set($key, $value);
 			}
 			
 		}
 		
 		public function set ( $key, $value ) {
 			switch ( $key ) {
-				case 'vf'       : $this->filters[] = $value;          break;
-				case 'y'        : $this->allowOverwrite = true;       break;
-				case 'extension': $this->extension           = $value; break;
+				// filesystem
+				case 'y'        : 
+				case 'overwrite': $this->allowOverwrite = true; break;
+				
+				case 'extension': $this->setFilepath(array('extension' => $value)); break;
+				case 'directory': $this->setFilepath(array('directory' => $value)); break;
 				
 				// TODO convert 00:00:00 duration to seconds?
 				case 't'        :
-				case 'duration' : $this->duration            = $value; break;
+				case 'duration' : $this->duration = $value; break;
 				
 				case 'f'        :
-				case 'format'   : $this->format              = $value; break;
+				case 'format'   : $this->format = $value; break;
 				
 				case 'vcodec'   :                                     
-				case 'c:v'      : $this->video['codec']      = $value; break;
-				
+				case 'c:v'      : $this->video['codec'] = $value; break;
 				// TODO convert pretty (1024k, 10M) to bytes
 				case 'b'        :                                     
-				case 'b:v'      : $this->video['bitrate']    = $value; break;
-				case 'r'        : $this->video['framerate']  = $value; break;
+				case 'b:v'      : $this->video['bitrate'] = $value; break;
+				case 'r'        : $this->video['framerate'] = $value; break;
 				case 's'        :
 					list($this->width, $this->height) = explode('x', $value);
 					break;
-				case 'width'    : $this->width               = $value; break;
-				case 'height'   : $this->height              = $value; break;
-				case 'rotate'   : $this->rotation            = $value; break;
+				case 'width'    : $this->width = $value; break;
+				case 'height'   : $this->height = $value; break;
+				case 'rotate'   : $this->rotation = $value; break;
 				
 				case 'acodec'   :                                   
-				case 'c:a'      : $this->audio['codec']      = $value; break;
+				case 'c:a'      : $this->audio['codec'] = $value; break;
 				// TODO convert pretty (1024k, 10M) to bytes
 				case 'ab'       :                                     
-				case 'b:a'      : $this->audio['bitrate']    = $value; break;
-				case 'ac'       : $this->audio['channels']   = $value; break;
+				case 'b:a'      : $this->audio['bitrate'] = $value; break;
+				case 'ac'       : $this->audio['channels'] = $value; break;
 				case 'ar'       : $this->audio['samplerate'] = $value; break;
 				
-				case 'c:s'      : $this->text['codec']       = $value; break;
+				case 'c:s'      : $this->text['codec'] = $value; break;
 				
 				default:
-					$this->arguments[$key] = $value;
-					break;
+					// multiple value support -- if defined multiple times then create array
+					if ( array_key_exists($key, $this->extraArguments) ) {
+						if ( is_array($this->extraArguments[$key]) ) {
+							$this->extraArguments[$key][] = $value;
+						} else {
+							$this->extraArguments[$key] = array($this->extraArguments[$key], $value);
+						}
+					} else {
+						$this->extraArguments[$key] = $value;
+					}
 			}
 		}
 		
+		// NOTE doesn't include output filepath
 		public function asArgumentsString () {
 			$args = "";
-			foreach ( $this->arguments as $key => $value ) {
-				$args .= " -$key $value";
-			}
 			
 			if ( $this->rotation ) {
 				$this->rotate($this->rotation);
@@ -150,9 +131,15 @@
 				$this->constrainSize( $this->width, $this->height );
 			}
 			
-			foreach ( $this->filters as $value ) {
-				$args .= " -vf $value";
+			foreach ( $this->extraArguments as $key => $value ) {
+				// multiple values support
+				if ( is_array($value) ) {
+					$args .= " -$key " . implode(" -$key ", $value);
+				} else {
+					$args .= " -$key $value";
+				}
 			}
+			
 			
 			if ( $this->format ) {
 				$args .= " -f {$this->format}";
@@ -170,7 +157,11 @@
 		
 		}
 		
-		public function constrainSize( $maxWidth = null, $maxHeight = null) {
+		// NOTE the below functions are only used when constructing argument string
+		
+		private function constrainSize( $maxWidth = null, $maxHeight = null) {
+			
+			$filter = '';
 			
 			if ( $maxWidth && (($maxWidth > 4096) || ($maxWidth < 16)) ) {
 				throw new Exception("Invalid width: $maxWidth");
@@ -181,51 +172,42 @@
 			}
 			
 			if ( $maxWidth && $maxHeight ) {
-				$this->filters[] = "scale=\"trunc(iw*min($maxWidth/iw\, $maxHeight/ih)/2)*2:trunc(ih*min($maxWidth/iw\, $maxHeight/ih)/2)*2\"";				
+				$filter = "scale=\"trunc(iw*min($maxWidth/iw\, $maxHeight/ih)/2)*2:trunc(ih*min($maxWidth/iw\, $maxHeight/ih)/2)*2\"";				
 			} elseif ( $maxWidth ) {
-				$this->filters[] = 'scale="min(' . $maxWidth . '\, iw):trunc(ow/a/2)*2"';
+				$filter = 'scale="min(' . $maxWidth . '\, iw):trunc(ow/a/2)*2"';
 			} elseif ( $maxHeight ) {
-				$this->filters[] = 'scale="trunc(oh*a/2)*2:min(' . $maxHeight . '\, ih)"';
+				$filter = 'scale="trunc(oh*a/2)*2:min(' . $maxHeight . '\, ih)"';
 			}
 			
+			$this->set('vf', $filter);
+			
 		}
-		
-		public function rotate ( $rotation ) {
+				
+		private function rotate ( $rotation ) {
+			
+			$filter = '';
 			
 			switch ( (int) $rotation ) {
 				case 0:
 					break;
 				case 90:
-					$this->filters[] = "transpose=1";
+					$filter = "transpose=1";
 					break;
 				case -90:
-					$this->filters[] = "transpose=2";
+					$filter = "transpose=2";
 					break;
 				case 180:
 				case -180:
-					$this->filters[] = "hflip";
-					$this->filters[] = "vflip";
+					// flip upside down and horizontally to avoid mirroring
+					$filter = "hflip,vflip";
 					break;
 				default:
 					throw new Exception('Rotation should be degrees: 0, 90, -90, 180 or -180');
 					break;
 			}
 			
-		}
-		
-		/**
-		 * Select a portion of a file from a given offset
-		 * Parameters follow array_slice syntax:
-		 * @param {float} offset - Offset (in seconds) to start
-		 * @param {float} duration - Duration (in seconds) of output file.
-		 * 				  If null, 0 or negative then encode to end of input
-		 */
-		public function slice ( $offset, $duration=null ) {
-			$this->arguments['ss'] = (int) $offset;
+			$this->set('vf', $filter);
 			
-			if( (float) $duration > 0 ) {
-				$this->duration = (float) $duration;
-			}
-		
 		}
+		
 	}
